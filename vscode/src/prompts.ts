@@ -7,108 +7,50 @@ export interface PromptContext {
     cursorCol?: number;
 }
 
+const SYSTEM_DIFF =
+    "Sen, Türkçe doğal dil talimatlarına göre kod düzenlemesi yapan bir asistansın. Sadece istenen değişiklikleri içeren bir birleştirilmiş fark (unified diff) bloğu üret. Tüm dosyayı yeniden yazma. Çıktıyı ```diff ... ``` bloğu içinde ver.";
+
+const SYSTEM_FULL =
+    "Sen, Türkçe doğal dil talimatlarına göre kod düzenlemesi yapan bir asistansın. Talimatı uygulayarak kodun tamamını yeniden üret. Çıktıyı ```python ... ``` bloğu içinde ver.";
+
 /**
- * Prompt A: SEARCH/REPLACE block format (Aider-style).
- * Verbatim per spec — do not alter.
+ * Prompt A: unified-diff condition.
+ * System prompt contains all format rules; user message contains only the data.
  */
-export function buildPromptA(ctx: PromptContext): string {
+export function buildPromptA(ctx: PromptContext): { system: string; user: string } {
+    // TODO: confirm this user-message layout matches the fine-tuning user-message format.
     const { lang, originalCode, instruction, highlightedCode, cursorLine, cursorCol } = ctx;
 
-    let prompt =
-`You are an expert programmer making a targeted edit to the user's code.
-
-The current file (${lang}):
-\`\`\`${lang}
-${originalCode}
-\`\`\`
-
-The user instruction is:
-${instruction}
-(Note: the instruction may be written in Turkish.)
-`;
+    let user = `Talimat:\n${instruction}\n\nMevcut dosya (${lang}):\n\`\`\`${lang}\n${originalCode}\n\`\`\`\n`;
 
     if (highlightedCode) {
-        prompt +=
-`
-The user highlighted this section as the likely edit target:
-\`\`\`${lang}
-${highlightedCode}
-\`\`\`
-`;
+        user += `\nSeçili bölüm:\n\`\`\`${lang}\n${highlightedCode}\n\`\`\`\n`;
     }
 
     if (cursorLine !== undefined && cursorCol !== undefined) {
-        prompt += `The user cursor is at line ${cursorLine}, column ${cursorCol}.\n`;
+        user += `\nİmleç konumu: satır ${cursorLine}, sütun ${cursorCol}\n`;
     }
 
-    prompt +=
-`
-Output ONLY one or more SEARCH/REPLACE blocks in EXACTLY this format,
-with no other text:
-
-<<<<<<< SEARCH
-[exact existing code, character for character, including whitespace]
-=======
-[the replacement code]
->>>>>>> REPLACE
-
-Rules:
-- Each SEARCH block must match the existing file EXACTLY, including
-  indentation and trailing whitespace. No paraphrasing.
-- Keep SEARCH blocks small — only the lines that change plus minimal
-  surrounding context needed for uniqueness.
-- Emit multiple blocks if multiple non-contiguous regions need editing.
-- For a pure insertion, use an empty SEARCH block with the new content
-  in REPLACE, preceded by an existing anchor line in SEARCH so we can
-  locate the insertion point.`;
-
-    return prompt;
+    return { system: SYSTEM_DIFF, user };
 }
 
 /**
- * Prompt B: Whole-file rewrite.
- * Verbatim port of EDIT-Bench Appendix D (Figure 13 / Figure 15) — do not alter.
+ * Prompt B: whole-file rewrite condition.
+ * System prompt contains all format rules; user message contains only the data.
  */
-export function buildPromptB(ctx: PromptContext): string {
-    const { lang, originalCode, instruction, highlightedCode } = ctx;
+export function buildPromptB(ctx: PromptContext): { system: string; user: string } {
+    // TODO: confirm this user-message layout matches the fine-tuning user-message format.
+    const { lang, originalCode, instruction, highlightedCode, cursorLine, cursorCol } = ctx;
+
+    let user = `Talimat:\n${instruction}\n\nMevcut dosya (${lang}):\n\`\`\`${lang}\n${originalCode}\n\`\`\`\n`;
 
     if (highlightedCode) {
-        // Figure 13: with highlight
-        return (
-`Generate a new implementation of the following code based on the user instruction:
-
-The Original code (to be modified):
-\`\`\`${lang}
-${originalCode}
-\`\`\`
-
-The user instruction is:
-${instruction}
-
-And they highlighted this section to be changed:
-\`\`\`${lang}
-${highlightedCode}
-\`\`\`
-
-Please only change the highlighted section and leave the rest of the code unchanged.
-Please output the entire code file.
-Respond only in a code block beginning with \`\`\`${lang}.`
-        );
-    } else {
-        // Figure 15: without highlight
-        return (
-`Generate a new implementation of the following code based on the user instruction:
-
-The Original code (to be modified):
-\`\`\`${lang}
-${originalCode}
-\`\`\`
-
-The user instruction is:
-${instruction}
-
-Please output the entire code file.
-Respond only in a code block beginning with \`\`\`${lang}.`
-        );
+        user += `\nSeçili bölüm:\n\`\`\`${lang}\n${highlightedCode}\n\`\`\`\n`;
     }
+
+    if (cursorLine !== undefined && cursorCol !== undefined) {
+        user += `\nİmleç konumu: satır ${cursorLine}, sütun ${cursorCol}\n`;
+    }
+
+    return { system: SYSTEM_FULL, user };
 }

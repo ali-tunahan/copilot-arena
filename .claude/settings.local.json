@@ -6,7 +6,11 @@
       "Bash(Format-Table -AutoSize)",
       "PowerShell(head -100)",
       "Bash(npm install *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "PowerShell(Get-ChildItem -Path \"c:\\\\GitHub\\\\copilot-arena\\\\vscode\\\\src\" -File | ForEach-Object { $_.Name })",
+      "Bash(grep -E \"\\\\\\\\.ts$\")",
+      "Bash(Remove-Item \"c:\\\\GitHub\\\\copilot-arena\\\\vscode\\\\src\\\\searchReplace.ts\")",
+      "PowerShell(Remove-Item \"c:\\\\GitHub\\\\copilot-arena\\\\vscode\\\\src\\\\searchReplace.ts\" -Confirm:$false)"
     ]
   }
 }

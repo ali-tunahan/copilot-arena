@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { VerticalPerLineDiffManager } from './diff/verticalPerLine/manager';
 import { chatCompletion } from './api';
 import { buildPromptA, buildPromptB, PromptContext } from './prompts';
-import { parseSearchReplace, applySearchReplace, SearchReplaceError } from './searchReplace';
+import { extractDiff, applyUnifiedDiff, UnifiedDiffError } from './unifiedDiff';
 
 export class PromptToDiffHandler {
     constructor(
@@ -57,20 +57,24 @@ export class PromptToDiffHandler {
             return;
         }
 
-        // --- Process A: parse SEARCH/REPLACE and apply to original file ---
+        // --- Process A: extract unified diff and apply to original file ---
         let appliedA: string | undefined;
         if (responseA) {
-            try {
-                const blocks = parseSearchReplace(responseA);
-                appliedA = applySearchReplace(originalCode, blocks);
-            } catch (e) {
-                if (e instanceof SearchReplaceError) {
-                    vscode.window.showWarningMessage('A uygulanamadı: arama bloğu eşleşmedi');
-                } else {
-                    console.error('Unexpected error applying SEARCH/REPLACE:', e);
-                    vscode.window.showWarningMessage('A uygulanamadı: arama bloğu eşleşmedi');
+            const diffText = extractDiff(responseA);
+            if (diffText === null) {
+                vscode.window.showWarningMessage('A uygulanamadı: fark bloğu bulunamadı');
+            } else {
+                try {
+                    appliedA = applyUnifiedDiff(originalCode, diffText);
+                } catch (e) {
+                    if (e instanceof UnifiedDiffError) {
+                        vscode.window.showWarningMessage('A uygulanamadı: fark uygulanamadı');
+                    } else {
+                        console.error('Unexpected error applying unified diff:', e);
+                        vscode.window.showWarningMessage('A uygulanamadı: fark uygulanamadı');
+                    }
+                    // appliedA stays undefined -> Ctrl+1 disabled this round
                 }
-                // appliedA remains undefined; Cmd+1 will be disabled for this round.
             }
         } else {
             vscode.window.showWarningMessage('Model isteği başarısız oldu');
@@ -116,7 +120,7 @@ function extractCodeBlock(response: string, lang: string): string | undefined {
     const specificMatch = response.match(specificFence);
     if (specificMatch) { return specificMatch[1]; }
 
-    // Fallback: any fenced code block
+    // Fallback: any fenced code block (```python, ```js, ```ts, or bare ```)
     const anyFence = /```[\w]*\r?\n([\s\S]*?)\r?\n?```/;
     const anyMatch = response.match(anyFence);
     if (anyMatch) { return anyMatch[1]; }

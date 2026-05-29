@@ -49,15 +49,34 @@ In-line edits allow you to modify larger portions of your code with a simple pro
 
 Here's how to generate in-line edits:
 - **Invoke edits:** Highlight any relevant code from your current file and press ```⌘+i``` (Windows: ```Ctrl+i```). Enter in your prompt (e.g., what would you like changed about the highlighted code). When edits are being generated, the check mark changes to a spinning circle.
-- **View paired edits:** Two new text files containing diffs between your original file and edited file will pop up. Similar to [autocomplete](#autocomplete), you will see a *pair* of edits.
+- **View paired edits:** Two diff tabs open side by side. **A (left)** shows a Birleştirilmiş Fark (unified diff) applied to your file; **B (right)** shows a Tüm Dosya (whole-file rewrite).
 - **Select between edits:** 
-  - Accept left edit: Mac ```⌘+1```, Windows ```Ctrl+1```
-  - Accept right edit: Mac ```⌘+2```, Windows ```Ctrl+2```
+  - Accept left edit (A): Mac ```⌘+1```, Windows ```Ctrl+1```
+  - Accept right edit (B): Mac ```⌘+2```, Windows ```Ctrl+2```
   - Accept neither (revert): Mac ```⌘+3```, Windows ```Ctrl+3```. For old users, this was originally ```⌘+n```.
 
 Any changes will be automatically applied and the files showing diffs will be closed. You can always undo the change after if you would like.
 
 We welcome feedback on this feature! Please get in touch via Discord or raise an issue on the repo.
+
+### Changing the prompts
+
+The two edit strategies send different system prompts to the model:
+
+| Side | Strategy | System prompt variable |
+|------|----------|------------------------|
+| A (left) | **Birleştirilmiş Fark (unified diff)** — model emits a `\`\`\`diff` block; only changed lines are sent back | `system_diff` |
+| B (right) | **Tüm Dosya (whole-file rewrite)** — model rewrites the entire file in a fenced code block | `system_full` |
+
+The format rules live entirely in the system prompts (`system_diff` / `system_full` in `src/prompts.ts`). The user message sent to the model contains only the instruction, the original file, and the optional highlighted section — no output-format instructions.
+
+### Troubleshooting
+
+| Warning | Meaning |
+|---------|---------|
+| `A uygulanamadı: fark bloğu bulunamadı` | The model did not emit a `\`\`\`diff` block — check that the model was trained with the correct system prompt. |
+| `A uygulanamadı: fark uygulanamadı` | The model's diff could not be applied to the file — the context lines in the diff did not match the current file content. |
+| `Model isteği başarısız oldu` | The API request failed — check your API key and endpoint settings. |
 
 ## Autocomplete
 

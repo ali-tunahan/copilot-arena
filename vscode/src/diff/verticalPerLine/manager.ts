@@ -16,7 +16,7 @@ export class VerticalPerLineDiffManager {
 
     /**
      * Open two side-by-side diff editors:
-     *   Left  (ViewColumn.One):  "A: Arama & Değiştirme"  — appliedA vs original
+     *   Left  (ViewColumn.One):  "A: Birleştirilmiş Fark"  — appliedA vs original
      *   Right (ViewColumn.Two):  "B: Tüm Dosya"           — appliedB vs original
      *
      * Pass undefined for a side to skip it (that side's accept key will show a warning).
@@ -35,7 +35,7 @@ export class VerticalPerLineDiffManager {
         this.tempDir = tempDir;
         await vscode.workspace.fs.createDirectory(vscode.Uri.file(tempDir));
 
-        const tempFileA = vscode.Uri.file(path.join(tempDir, 'A_SearchReplace.txt'));
+        const tempFileA = vscode.Uri.file(path.join(tempDir, 'A_Diff.txt'));
         const tempFileB = vscode.Uri.file(path.join(tempDir, 'B_WholeFile.txt'));
 
         if (appliedA !== undefined) {
@@ -50,7 +50,7 @@ export class VerticalPerLineDiffManager {
                 'vscode.diff',
                 originalUri,
                 tempFileA,
-                'A: Arama & Değiştirme',
+                'A: Birleştirilmiş Fark',
                 { viewColumn: vscode.ViewColumn.One, preview: false }
             );
         }
@@ -74,7 +74,7 @@ export class VerticalPerLineDiffManager {
 
     async acceptLLMResponse(responseNumber: 1 | 2): Promise<void> {
         if (responseNumber === 1 && !this.aAvailable) {
-            vscode.window.showWarningMessage('A uygulanamadı: arama bloğu eşleşmedi');
+            vscode.window.showWarningMessage('A uygulanamadı: fark uygulanamadı');
             return;
         }
         if (responseNumber === 2 && !this.bAvailable) {
@@ -83,7 +83,7 @@ export class VerticalPerLineDiffManager {
         }
         if (!this.originalFilepath || !this.tempDir) { return; }
 
-        const filename = responseNumber === 1 ? 'A_SearchReplace.txt' : 'B_WholeFile.txt';
+        const filename = responseNumber === 1 ? 'A_Diff.txt' : 'B_WholeFile.txt';
         const tempFilePath = path.join(this.tempDir, filename);
 
         await this.copyFileContent(tempFilePath, this.originalFilepath);

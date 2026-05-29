@@ -13,7 +13,7 @@ interface ChatCompletionResponse {
  * Throws on HTTP errors, timeouts, or missing API key.
  */
 export async function chatCompletion(
-    prompt: string,
+    prompt: { system?: string; user: string },
     context: vscode.ExtensionContext,
     signal?: AbortSignal
 ): Promise<string> {
@@ -26,6 +26,10 @@ export async function chatCompletion(
     if (!apiKey) {
         throw new Error('API key not set. Run "MyExt: API Anahtarını Ayarla" command.');
     }
+
+    const messages: Array<{ role: string; content: string }> = prompt.system
+        ? [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }]
+        : [{ role: 'user', content: prompt.user }];
 
     const timeoutController = new AbortController();
     const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs);
@@ -47,7 +51,7 @@ export async function chatCompletion(
             },
             body: JSON.stringify({
                 model,
-                messages: [{ role: 'user', content: prompt }],
+                messages,
                 temperature: 0,
             }),
             signal: timeoutController.signal,
