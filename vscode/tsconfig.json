@@ -11,14 +11,12 @@
         "rootDir": ".",
         "outDir": "out",
         "strict": true,
-        "jsx": "react",
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true
     },
     "include": [
-        "src/**/*",
-        "media/**/*"
+        "src/**/*"
     ],
     "exclude": [
         "node_modules",

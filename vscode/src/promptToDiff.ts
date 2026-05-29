@@ -1,70 +1,129 @@
 import * as vscode from 'vscode';
 import { VerticalPerLineDiffManager } from './diff/verticalPerLine/manager';
-import { streamDiffLines } from './diff/diff';
-import { fetchEditPair } from './api';
-import { EditPairRequest, EditPairResponse, PrivacySetting } from './types';
-import { randomUUID } from 'crypto';
+import { chatCompletion } from './api';
+import { buildPromptA, buildPromptB, PromptContext } from './prompts';
+import { parseSearchReplace, applySearchReplace, SearchReplaceError } from './searchReplace';
 
 export class PromptToDiffHandler {
-    private diffManager: VerticalPerLineDiffManager;
+    constructor(
+        private readonly diffManager: VerticalPerLineDiffManager,
+        private readonly context: vscode.ExtensionContext
+    ) {}
 
-    constructor(diffManager: VerticalPerLineDiffManager) {
-        this.diffManager = diffManager;
-    }
-
-    public async handlePrompt() {
-        const config = vscode.workspace.getConfiguration("arena");
-        const privacySetting = config.get<PrivacySetting>("codePrivacySettings") || PrivacySetting.Private;
+    public async handlePrompt(): Promise<void> {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
             vscode.window.showErrorMessage('No active editor');
             return;
         }
-        const prompt = await vscode.window.showInputBox({
-            prompt: 'Enter your prompt for code generation',
-            placeHolder: 'e.g., Add a function to calculate factorial',
+
+        const instruction = await vscode.window.showInputBox({
+            placeHolder: 'Talimatınızı yazın...',
         });
-        if (!prompt) {
-            return; // User cancelled the input
-        }
+        if (!instruction) { return; }
 
         const document = editor.document;
         const selection = editor.selection;
-        const startLine = selection.start.line;
-        const endLine = selection.end.line;
+        const lang = document.languageId;
+        const originalCode = document.getText();
+        const highlightedCode = selection.isEmpty ? undefined : document.getText(selection);
 
-        const prefix = document.getText(new vscode.Range(0, 0, startLine, 0));
-        const highlighted = document.getText(selection);
-        const suffix = document.getText(new vscode.Range(endLine, document.lineAt(endLine).text.length, document.lineCount, 0));
-
-        const editPairRequest: EditPairRequest = {
-            pairId: randomUUID(),
-            userId: vscode.env.machineId,
-            prefix,
-            suffix,
-            maxLines: 50,
-            privacy: privacySetting,
-            language: document.languageId,
-            codeToEdit: highlighted,
-            userInput: prompt
+        const ctx: PromptContext = {
+            lang,
+            originalCode,
+            instruction,
+            highlightedCode,
+            cursorLine: editor.selection.active.line + 1,
+            cursorCol: editor.selection.active.character + 1,
         };
 
-        try {
-            const controller = new AbortController();
-            const editPairResponse = await fetchEditPair(editPairRequest, controller.signal);
+        const controller = new AbortController();
 
-            if (editPairResponse) {
-                await this.diffManager.streamSideBySideDiff(
-                    document.uri,
-                    new vscode.Range(startLine, 0, endLine, document.lineAt(endLine).text.length),
-                    editPairResponse.responseItems[0].response,
-                    editPairResponse.responseItems[1].response,
-                    editPairResponse
-                );
+        const [responseA, responseB] = await Promise.all([
+            chatCompletion(buildPromptA(ctx), this.context, controller.signal)
+                .catch((e: unknown) => {
+                    console.error('Prompt A request failed:', e);
+                    return null;
+                }),
+            chatCompletion(buildPromptB(ctx), this.context, controller.signal)
+                .catch((e: unknown) => {
+                    console.error('Prompt B request failed:', e);
+                    return null;
+                }),
+        ]);
+
+        if (!responseA && !responseB) {
+            vscode.window.showErrorMessage('Model isteği başarısız oldu');
+            return;
+        }
+
+        // --- Process A: parse SEARCH/REPLACE and apply to original file ---
+        let appliedA: string | undefined;
+        if (responseA) {
+            try {
+                const blocks = parseSearchReplace(responseA);
+                appliedA = applySearchReplace(originalCode, blocks);
+            } catch (e) {
+                if (e instanceof SearchReplaceError) {
+                    vscode.window.showWarningMessage('A uygulanamadı: arama bloğu eşleşmedi');
+                } else {
+                    console.error('Unexpected error applying SEARCH/REPLACE:', e);
+                    vscode.window.showWarningMessage('A uygulanamadı: arama bloğu eşleşmedi');
+                }
+                // appliedA remains undefined; Cmd+1 will be disabled for this round.
             }
+        } else {
+            vscode.window.showWarningMessage('Model isteği başarısız oldu');
+        }
+
+        // --- Process B: extract whole-file code block ---
+        let appliedB: string | undefined;
+        if (responseB) {
+            appliedB = extractCodeBlock(responseB, lang) ?? responseB;
+        } else {
+            vscode.window.showWarningMessage('Model isteği başarısız oldu');
+        }
+
+        if (!appliedA && !appliedB) { return; }
+
+        const fullRange = new vscode.Range(
+            0, 0,
+            document.lineCount - 1,
+            document.lineAt(document.lineCount - 1).text.length
+        );
+
+        try {
+            await this.diffManager.streamSideBySideDiff(
+                document.uri,
+                fullRange,
+                appliedA,
+                appliedB,
+            );
         } catch (error) {
-            console.error('Error fetching edit pair:', error);
-            vscode.window.showErrorMessage('Failed to generate code edits. Please try again.');
+            console.error('Error opening diff view:', error);
+            vscode.window.showErrorMessage('Model isteği başarısız oldu');
         }
     }
+}
+
+/** Extract the content of the first fenced code block from a model response. */
+function extractCodeBlock(response: string, lang: string): string | undefined {
+    // Try language-specific fence first (```python, ```typescript, etc.)
+    const specificFence = new RegExp(
+        '```' + escapeRegex(lang) + '\\r?\\n([\\s\\S]*?)\\r?\\n?```',
+        'i'
+    );
+    const specificMatch = response.match(specificFence);
+    if (specificMatch) { return specificMatch[1]; }
+
+    // Fallback: any fenced code block
+    const anyFence = /```[\w]*\r?\n([\s\S]*?)\r?\n?```/;
+    const anyMatch = response.match(anyFence);
+    if (anyMatch) { return anyMatch[1]; }
+
+    return undefined;
+}
+
+function escapeRegex(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -1,16 +1,10 @@
 const esbuild = require("esbuild");
-const fs = require("fs");
-const path = require("path");
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
-/**
- * @type {import('esbuild').Plugin}
- */
 const esbuildProblemMatcherPlugin = {
 	name: 'esbuild-problem-matcher',
-
 	setup(build) {
 		build.onStart(() => {
 			console.log('[watch] build started');
@@ -23,25 +17,6 @@ const esbuildProblemMatcherPlugin = {
 			console.log('[watch] build finished');
 		});
 	},
-};
-
-/**
- * @type {import('esbuild').Plugin}
- */
-const sqlJsWasmPlugin = {
-    name: 'sql.js-wasm',
-    setup(build) {
-        build.onResolve({ filter: /sql-wasm\.wasm$/ }, args => {
-            return { path: args.path, external: true }
-        });
-
-        build.onEnd(() => {
-            const wasmSource = path.join(__dirname, 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
-            const wasmDest = path.join(__dirname, 'dist', 'sql-wasm.wasm');
-            fs.copyFileSync(wasmSource, wasmDest);
-            console.log('Copied sql-wasm.wasm to dist folder');
-        });
-    },
 };
 
 async function main() {
@@ -58,14 +33,7 @@ async function main() {
 		outfile: 'dist/extension.js',
 		external: ['vscode'],
 		logLevel: 'silent',
-		plugins: [
-			/* add to the end of plugins array */
-			esbuildProblemMatcherPlugin,
-			sqlJsWasmPlugin
-		],
-		define: {
-            'process.env.SQLJS_WASM_PATH': JSON.stringify('./sql-wasm.wasm'),
-        },
+		plugins: [esbuildProblemMatcherPlugin],
 	});
 	if (watch) {
 		await ctx.watch();
